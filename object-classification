@@ -1,0 +1,60 @@
+import cv2
+import numpy as np
+import tensorflow as tf
+
+# Load the pre-trained model and its associated label names
+model = tf.keras.applications.ResNet50(weights='imagenet')
+label_names = tf.keras.applications.imagenet_utils.decode_predictions(np.zeros((1, 1000)), top=1000)[0]
+
+# Load the image
+image = cv2.imread('Synthetix2/test/2.jpg')
+
+# Resize the image to match the input shape of the model
+resized_image = cv2.resize(image, (224, 224))
+
+# Preprocess the image
+preprocessed_image = tf.keras.applications.resnet50.preprocess_input(resized_image)
+
+# Perform object detection using the pre-trained model
+predictions = model.predict(np.expand_dims(preprocessed_image, axis=0))
+decoded_predictions = tf.keras.applications.imagenet_utils.decode_predictions(predictions, top=5)[0]
+
+# Iterate over the detected objects and draw rectangles
+for _, class_name, confidence in decoded_predictions:
+    label = f"{class_name}: {confidence:.2f}"
+    print(label)
+
+    # Get the class index in label_names
+    class_index = next(i for i, (_, name, _) in enumerate(label_names) if name == class_name)
+
+    # Find the previous layer before the Activation layer
+    prev_layer = model.get_layer('conv5_block3_out').output
+
+    # Get the feature map size from the previous layer
+    feature_map_size = tf.shape(prev_layer)[1:3]
+
+    # Get the bounding box coordinates from the predictions
+    box = predictions[0, class_index]
+
+    # Find the index of the maximum confidence value
+    box_argmax = np.unravel_index(np.argmax(box), box.shape[:-1])
+
+    # Scale the bounding box coordinates to the original image size
+    x = int(box_argmax[1] * image.shape[1] / feature_map_size[1])
+    y = int(box_argmax[0] * image.shape[0] / feature_map_size[0])
+    width = int((box_argmax[3] - box_argmax[1]) * image.shape[1] / feature_map_size[1])
+    height = int((box_argmax[2] - box_argmax[0]) * image.shape[0] / feature_map_size[0])
+
+    # Draw a rectangle around the object
+    cv2.rectangle(image, (x, y), (x + width, y + height), (0, 255, 0), 2)
+
+    # Crop the object region
+    object_roi = image[y:y + height, x:x + width]
+
+    # Save the cropped object as a separate image file
+    cv2.imwrite(f"{class_name}.jpg", object_roi)
+
+# Display the image with rectangles
+cv2.imshow("Objects", image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
